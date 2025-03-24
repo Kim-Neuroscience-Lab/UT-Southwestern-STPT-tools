@@ -1,0 +1,61 @@
+import os
+import re
+import numpy as np
+import tifffile
+from collections import defaultdict
+
+# Set your directory containing unsorted images here:
+input_dir = r"X:\Matt_Jacobs\Images_and_Data\STPT data from utsouthwestern\Sample 295\raw single channel single plane"  # Modify this path
+output_dir = r"X:\Matt_Jacobs\Images_and_Data\STPT data from utsouthwestern\Sample 295\raw single channel single plane\out" # Modify this path
+
+# Regex pattern to extract section, optical plane, and channel
+pattern = re.compile(r"S(\d+)_L(\d+)_ch(\d+)")
+
+# Group files by section and channel
+section_channel_groups = defaultdict(lambda: defaultdict(list))
+
+# List all tif files in the directory
+for filename in os.listdir(input_dir):
+    if filename.lower().endswith(('.tif', '.tiff')):
+        match = pattern.search(filename)
+        if match:
+            section_num = int(match.group(1))
+            optical_plane = int(match.group(2))
+            channel_num = int(match.group(3))
+            filepath = os.path.join(input_dir, filename)
+            section_channel_groups[section_num][channel_num].append((optical_plane, filepath))
+
+# Process each section and channel separately
+for section_num, channels in section_channel_groups.items():
+    for channel_num, planes in channels.items():
+        # Sort planes by optical plane number
+        sorted_planes = sorted(planes, key=lambda x: x[0])
+
+        # Load images into a stack
+        image_stack = []
+        for plane_num, filepath in sorted_planes:
+            try:
+                image = tifffile.imread(filepath)
+                image_stack.append(image)
+            except Exception as e:
+                print(f"Error reading {filepath}: {e}")
+                continue  # skip problematic file
+
+        if not image_stack:
+            print(f"No valid images found for section {section_num}, channel {channel_num}, skipping.")
+            continue
+
+        image_stack = np.array(image_stack)
+
+        # Perform Maximum Intensity Projection
+        mip = np.max(image_stack, axis=0)
+
+        # Create channel-specific output directories
+        channel_output_dir = os.path.join(output_dir, f"channel_{channel_num:02}")
+        os.makedirs(channel_output_dir, exist_ok=True)
+
+        # Save the projected image
+        output_filename = f"MIP_section_{section_num:03}_ch{channel_num:02}.tif"
+        tifffile.imwrite(os.path.join(channel_output_dir, output_filename), mip)
+
+        print(f"Section {section_num}, channel {channel_num} projected and saved as {output_filename}")
